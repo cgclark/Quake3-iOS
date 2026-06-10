@@ -99,3 +99,5 @@ Have fun. For any questions I can be reached at tomkidd@gmail.com
 ---
 
 The interface also has a provisional list of maps that include my favorites, beyond the stock maps: 13black_hd, 13power, akutatourney4, akutatourney5, akutatourney6, akutatourney7, akutatourney8, chronic, coloncancer, darkmeat, dk_kb, gm3tourney2, lighttower, lighttower_v2, lloydmdm2, meatpatty, obs3dm5, q3gwdm2, q3mexx1, redmeat, runtfest, vmpteam9, water001, whitemeat.
+
+Expects Xbox Series X controller to be connected prior to launching the game.

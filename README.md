@@ -95,3 +95,7 @@ I have now modified the code to use [SDL for iOS](https://www.libsdl.org/), empl
 I have also made apps for [*Wolfenstein 3-D*](https://github.com/tomkidd/Wolf3D-iOS), [*DOOM*, *DOOM II* and *Final DOOM*](https://github.com/tomkidd/DOOM-iOS), [*Quake*](https://github.com/tomkidd/Quake-iOS), [*Quake II*](https://github.com/tomkidd/Quake2-iOS), [*Return to Castle Wolfenstein*](https://github.com/tomkidd/RTCW-iOS) and [*DOOM 3*](https://github.com/tomkidd/DOOM3-iOS).
 
 Have fun. For any questions I can be reached at tomkidd@gmail.com
+
+---
+
+The interface also has a provisional list of maps that include my favorites, beyond the stock maps: 13black_hd, 13power, akutatourney4, akutatourney5, akutatourney6, akutatourney7, akutatourney8, chronic, coloncancer, darkmeat, dk_kb, gm3tourney2, lighttower, lighttower_v2, lloydmdm2, meatpatty, obs3dm5, q3gwdm2, q3mexx1, redmeat, runtfest, vmpteam9, water001, whitemeat.

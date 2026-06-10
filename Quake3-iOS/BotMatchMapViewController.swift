@@ -19,7 +19,7 @@ class BotMatchMapViewController: UIViewController {
     var selectedMap = "Q3DM1"
 
     var delegate:BotMatchProtocol?
-    
+
     let maps:[(map: String, name: String)] =
         [(map: "Q3DM0", name: "Q3DM0: Introduction"),
          (map: "Q3DM1", name: "Q3DM1: Arena Gate"),
@@ -46,13 +46,50 @@ class BotMatchMapViewController: UIViewController {
          (map: "Q3TOURNEY3", name: "Q3TOURNEY3: Hell's Gate"),
          (map: "Q3TOURNEY4", name: "Q3TOURNEY4: Vertical Vengeance"),
          (map: "Q3TOURNEY5", name: "Q3TOURNEY5: Fatal Instinct"),
-         (map: "Q3TOURNEY6", name: "Q3TOURNEY6: The Very End of You")]
+         (map: "Q3TOURNEY6", name: "Q3TOURNEY6: The Very End of You"),
+         (map: "runtfest", name: "Runt Fest"),
+         (map: "darkmeat", name: "Meat Pak: Dark Meat"),
+         (map: "whitemeat", name: "Meat Pak: White Meat"),
+         (map: "redmeat", name: "Meat Pak: Red Meat"),
+         (map: "coloncancer", name: "Meat Pak 2: Colon Cancer"),
+         (map: "meatpatty", name: "Meat Pak 2: Meat Patty"),
+         (map: "lloydmdm2", name: "lloyd mdm 2"),
+         (map: "akutatourney4", name: "Akuta Tourney 4"),
+         (map: "akutatourney5", name: "Akuta Tourney 5"),
+         (map: "akutatourney6", name: "Akuta Tourney 6"),
+         (map: "akutatourney7", name: "Akuta Tourney 7"),
+         (map: "akutatourney8", name: "Akuta Tourney 8"),
+         (map: "dk_kb", name: "dk kb"),
+         (map: "gm3tourney2", name: "GM3 Tourney 2"),
+         (map: "map-13black_hd", name: "Map-13 black hd"),
+         (map: "map-13power", name: "Map-13 power"),
+         (map: "map-q3mexx1", name: "Map q3 mexx 1"),
+         (map: "map-vmpteam9", name: "Map vmp team 9"),
+         (map: "obs3dm5", name: "obs3 dm 5"),
+         (map: "q3gwdm2", name: "q3gw dm 2"),
+         (map: "sykodm2", name: "syko dm 2"),
+         (map: "water001", name: "Water 001"),
+         (map: "xcsv_bq3hi-res", name: "xcsv bq3 hi-res"),
+         (map: "q3map_lighttower", name: "q3map light tower"),
+         (map: "chronic", name: "Chronic")]
 
     override func viewDidLoad() {
         super.viewDidLoad()
 
         mapList.mask = nil
         mapList.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
+
+        let mainMenuBtn = UIButton(type: .system)
+        mainMenuBtn.setTitle("Main Menu", for: .normal)
+        mainMenuBtn.setTitleColor(.systemRed, for: .normal)
+        mainMenuBtn.titleLabel?.font = UIFont.systemFont(ofSize: 15)
+        mainMenuBtn.addTarget(self, action: #selector(goToMainMenu(_:)), for: .touchUpInside)
+        mainMenuBtn.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(mainMenuBtn)
+        NSLayoutConstraint.activate([
+            mainMenuBtn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            mainMenuBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+        ])
         
         #if os(tvOS)
         let documentsDir = try! FileManager().url(for: .cachesDirectory, in: .userDomainMask, appropriateFor: nil, create: true).path
@@ -63,6 +100,19 @@ class BotMatchMapViewController: UIViewController {
     
     @IBAction func ok(_ sender: Any) {
         self.dismiss(animated: true, completion: nil)
+    }
+
+    @IBAction func goToMainMenu(_ sender: Any) {
+        if let nav = navigationController {
+            nav.popToRootViewController(animated: true)
+        } else {
+            // Walk up the presenter chain to the root
+            var presenter = presentingViewController
+            while presenter?.presentingViewController != nil {
+                presenter = presenter?.presentingViewController
+            }
+            presenter?.dismiss(animated: true)
+        }
     }
     
     
@@ -80,41 +130,41 @@ class BotMatchMapViewController: UIViewController {
 }
 
 extension BotMatchMapViewController : UITableViewDelegate {
-    
+
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         self.delegate?.setMap(map: maps[indexPath.row].map, name: maps[indexPath.row].name)
         var destinationURL = URL(fileURLWithPath: currentWorkingPath)
         destinationURL.appendPathComponent("graphics/\(maps[indexPath.row].map).jpg")
         mapShot.image = UIImage(contentsOfFile: destinationURL.path)
     }
-    
+
 }
 
 extension BotMatchMapViewController : UITableViewDataSource {
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
         return maps.count
     }
-    
+
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let cell = tableView.dequeueReusableCell(withIdentifier: "cell", for: indexPath)
         cell.textLabel?.text = maps[indexPath.row].name
-        
+
         if selectedMap == maps[indexPath.row].map {
             cell.setSelected(true, animated: false)
             var destinationURL = URL(fileURLWithPath: currentWorkingPath)
             destinationURL.appendPathComponent("graphics/\(maps[indexPath.row].map).jpg")
             mapShot.image = UIImage(contentsOfFile: destinationURL.path)
         }
-        
+
         return cell
     }
-    
+
     func tableView(_ tableView: UITableView, willDisplay cell: UITableViewCell, forRowAt indexPath: IndexPath) {
         if selectedMap == maps[indexPath.row].map {
             tableView.selectRow(at: indexPath, animated: false, scrollPosition: .none)
         }
     }
-        
+
     func numberOfSections(in tableView: UITableView) -> Int {
         return 1
     }

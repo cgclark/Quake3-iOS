@@ -105,7 +105,8 @@ class MainMenuViewController: UIViewController {
     
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
-        
+        ControllerUINavigator.shared.start()
+
         // Check if we should launch vanilla on start
         if UserDefaults.standard.bool(forKey: "launchVanillaOnStart") {
             UserDefaults.standard.set(false, forKey: "launchVanillaOnStart")

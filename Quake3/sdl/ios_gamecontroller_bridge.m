@@ -8,6 +8,7 @@
 
 #import "ios_gamecontroller_bridge.h"
 #import "IOSGameController.h"
+#import <CoreFoundation/CoreFoundation.h>
 
 void iOS_InitGameController(void) {
     [[IOSGameController sharedController] startControllerDiscovery];
@@ -93,6 +94,10 @@ int iOS_GetButtonOptions(void) {
     return [[IOSGameController sharedController] buttonOptions] ? 1 : 0;
 }
 
+int iOS_GetButtonShare(void) {
+    return [[IOSGameController sharedController] buttonShare] ? 1 : 0;
+}
+
 int iOS_GetLeftThumbstickButton(void) {
     return [[IOSGameController sharedController] leftThumbstickButton] ? 1 : 0;
 }
@@ -103,4 +108,45 @@ int iOS_GetRightThumbstickButton(void) {
 
 void iOS_TriggerHaptic(float intensity, int durationMs) {
     [[IOSGameController sharedController] triggerHaptic:intensity duration:durationMs];
+}
+
+void iOS_EnqueueVoiceCommand(const char *command) {
+    if (!command || !command[0]) return;
+    NSString *cmd = [NSString stringWithUTF8String:command];
+    [[IOSGameController sharedController] enqueuePendingVoiceCommand:cmd];
+}
+
+int iOS_DequeuePendingVoiceCommand(char *buf, int bufSize) {
+    NSString *cmd = [[IOSGameController sharedController] dequeuePendingVoiceCommand];
+    if (!cmd) return 0;
+    strncpy(buf, [cmd UTF8String], bufSize - 1);
+    buf[bufSize - 1] = '\0';
+    return 1;
+}
+
+// These are called from the game input loop; they call through to the Swift layer
+// via a global function pointer set at startup.
+static void (*s_startVoiceFn)(void) = NULL;
+static void (*s_stopVoiceFn)(void) = NULL;
+
+void iOS_RegisterVoiceFunctions(void (*startFn)(void), void (*stopFn)(void)) {
+    s_startVoiceFn = startFn;
+    s_stopVoiceFn  = stopFn;
+}
+
+void iOS_StartVoiceRecognition(void) {
+    if (s_startVoiceFn) s_startVoiceFn();
+}
+
+void iOS_StopVoiceRecognition(void) {
+    if (s_stopVoiceFn) s_stopVoiceFn();
+}
+
+void iOS_PumpMainRunLoop(void) {
+    // SFSpeechRecognizer dispatches its completion callbacks to the main queue.
+    // The SDL game loop is a tight while(1) that never returns to the run loop,
+    // so those callbacks would never fire without this manual pump.
+    // 0-second timeout + returnAfterSourceHandled=false → drain all pending
+    // sources instantly, then return.  Safe to call every frame.
+    CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.0, false);
 }

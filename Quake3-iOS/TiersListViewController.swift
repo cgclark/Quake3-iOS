@@ -54,10 +54,31 @@ class TiersListViewController: UIViewController {
         super.viewDidLoad()
         
         tiersList.mask = nil
-        
         tiersList.register(UITableViewCell.self, forCellReuseIdentifier: "cell")
 
-        // Do any additional setup after loading the view.
+        let mainMenuBtn = UIButton(type: .system)
+        mainMenuBtn.setTitle("Main Menu", for: .normal)
+        mainMenuBtn.setTitleColor(.systemRed, for: .normal)
+        mainMenuBtn.titleLabel?.font = UIFont.systemFont(ofSize: 15)
+        mainMenuBtn.addTarget(self, action: #selector(goToMainMenu), for: .touchUpInside)
+        mainMenuBtn.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(mainMenuBtn)
+        NSLayoutConstraint.activate([
+            mainMenuBtn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            mainMenuBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+        ])
+    }
+
+    @objc func goToMainMenu() {
+        if let nav = navigationController {
+            nav.popToRootViewController(animated: true)
+        } else {
+            var presenter = presentingViewController
+            while presenter?.presentingViewController != nil {
+                presenter = presenter?.presentingViewController
+            }
+            presenter?.dismiss(animated: true)
+        }
     }
 
     override func didReceiveMemoryWarning() {

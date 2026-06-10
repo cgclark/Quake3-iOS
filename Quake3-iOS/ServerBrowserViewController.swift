@@ -56,6 +56,18 @@ class ServerBrowserViewController: UIViewController {
         serversList.register(UINib(nibName: "ServerListViewCell", bundle: nil), forCellReuseIdentifier: "cell")
         serversList.mask = nil
 
+        let mainMenuBtn = UIButton(type: .system)
+        mainMenuBtn.setTitle("Main Menu", for: .normal)
+        mainMenuBtn.setTitleColor(.systemRed, for: .normal)
+        mainMenuBtn.titleLabel?.font = UIFont.systemFont(ofSize: 15)
+        mainMenuBtn.addTarget(self, action: #selector(goToMainMenu), for: .touchUpInside)
+        mainMenuBtn.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(mainMenuBtn)
+        NSLayoutConstraint.activate([
+            mainMenuBtn.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 12),
+            mainMenuBtn.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16),
+        ])
+
         activityIndicator.startAnimating()
         coordinator?.getServersList(host: host, port: port)
 
@@ -93,6 +105,18 @@ class ServerBrowserViewController: UIViewController {
         }
     }
     
+    @objc func goToMainMenu() {
+        if let nav = navigationController {
+            nav.popToRootViewController(animated: true)
+        } else {
+            var presenter = presentingViewController
+            while presenter?.presentingViewController != nil {
+                presenter = presenter?.presentingViewController
+            }
+            presenter?.dismiss(animated: true)
+        }
+    }
+
     @IBAction func exitToServerBrowser(segue: UIStoryboardSegue) {
     }
     

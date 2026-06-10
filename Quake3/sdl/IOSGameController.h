@@ -42,10 +42,15 @@
 @property (nonatomic, readonly) BOOL dpadRight;
 @property (nonatomic, readonly) BOOL buttonMenu;
 @property (nonatomic, readonly) BOOL buttonOptions;
+@property (nonatomic, readonly) BOOL buttonShare;
 @property (nonatomic, readonly) BOOL leftThumbstickButton;
 @property (nonatomic, readonly) BOOL rightThumbstickButton;
 
 // Haptic feedback
 - (void)triggerHaptic:(float)intensity duration:(int)durationMs;
+
+// Voice command queue (thread-safe)
+- (void)enqueuePendingVoiceCommand:(NSString *)command;
+- (NSString * _Nullable)dequeuePendingVoiceCommand;
 
 @end

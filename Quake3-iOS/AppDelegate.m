@@ -191,6 +191,19 @@
 }
 
 - (BOOL)application:(UIApplication *)application didFinishLaunchingWithOptions:(NSDictionary *)launchOptions {
+    // Migrate bindings to current defaults
+    NSUserDefaults *ud = [NSUserDefaults standardUserDefaults];
+    // View button → console
+    NSString *optionsBinding = [ud stringForKey:@"joy_buttonOptions_bind"];
+    if (!optionsBinding || [optionsBinding isEqualToString:@"+scores"]) {
+        [ud setObject:@"CONSOLE" forKey:@"joy_buttonOptions_bind"];
+    }
+    // Share button → scores
+    NSString *shareBinding = [ud stringForKey:@"joy_buttonShare_bind"];
+    if (!shareBinding || [shareBinding isEqualToString:@"toggleconsole"] || [shareBinding isEqualToString:@"CONSOLE"]) {
+        [ud setObject:@"+scores" forKey:@"joy_buttonShare_bind"];
+    }
+
     // Initialize GameController framework EARLY
     NSLog(@"AppDelegate: Initializing GameController framework early...");
     

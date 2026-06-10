@@ -66,6 +66,11 @@ void Sys_GLimpSafeInit( void );
 void Sys_GLimpInit( void );
 void Sys_PlatformInit( void );
 void Sys_PlatformExit( void );
+
+// iOS: longjmp target — set iOS_exitCallbackEnabled=1 before Sys_Startup
+#include <setjmp.h>
+extern jmp_buf iOS_exitJmpBuf;
+extern int     iOS_exitCallbackEnabled;
 void Sys_SigHandler( int signal ) __attribute__ ((noreturn));
 void Sys_ErrorDialog( const char *error );
 void Sys_AnsiColorPrint( const char *msg );

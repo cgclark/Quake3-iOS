@@ -85,12 +85,18 @@ static cvar_t *joy_dpadLeft_bind    = NULL;
 static cvar_t *joy_dpadRight_bind   = NULL;
 static cvar_t *joy_buttonMenu_bind  = NULL;
 static cvar_t *joy_buttonOptions_bind = NULL;
+static cvar_t *joy_buttonShare_bind = NULL;
 static cvar_t *joy_leftThumbstickButton_bind = NULL;
 static cvar_t *joy_rightThumbstickButton_bind = NULL;
 
 // Axis sensitivity cvars
 static cvar_t *joy_leftStickSensitivity = NULL;
 static cvar_t *joy_rightStickSensitivity = NULL;
+
+// Aim curve exponent: 1.0 = linear, 2.0 = quadratic (recommended), 3.0 = cubic
+static cvar_t *joy_aimCurve = NULL;
+// Input smoothing: 0.0 = none, higher = smoother (but more lag). 0.1–0.3 is subtle.
+static cvar_t *joy_aimSmoothing = NULL;
 
 // joystick mouse sensitivity
 static cvar_t *joy_menuMouseSpeed = NULL;
@@ -111,6 +117,7 @@ static struct {
     int dpadRight;
     int buttonMenu;
     int buttonOptions;
+    int buttonShare;
     int leftThumbstickButton;
     int rightThumbstickButton;
 } ios_controller_state;
@@ -545,18 +552,28 @@ IN_ProcessButtonBinding
 Handles both key bindings and direct command bindings
 ===============
 */
+static void IN_ToggleConsole(void);   // forward declaration
+
 static void IN_ProcessButtonBinding(cvar_t *bindCvar, qboolean pressed)
 {
     if (!bindCvar || !bindCvar->string[0])
         return;
-    
+
     const char *binding = bindCvar->string;
-    
-    
+
+    // Special case: "CONSOLE" or "toggleconsole" → open console + virtual keyboard
+    if (!Q_stricmp(binding, "CONSOLE") || !Q_stricmp(binding, "toggleconsole"))
+    {
+        if (pressed) IN_ToggleConsole();
+        return;
+    }
+
     // Check if this is a command (contains space, starts with +/-, or is a known command)
     if (strchr(binding, ' ') || binding[0] == '+' || binding[0] == '-' ||
         !Q_stricmp(binding, "weapnext") || !Q_stricmp(binding, "weapprev") ||
-        !Q_stricmp(binding, "centerview") || !Q_stricmp(binding, "togglemenu"))
+        !Q_stricmp(binding, "centerview") || !Q_stricmp(binding, "togglemenu") ||
+        !Q_stricmp(binding, "toggleconsole") || !Q_stricmp(binding, "kill") ||
+        !Q_stricmp(binding, "drop"))
     {
         // Handle +/- commands
         if (binding[0] == '+')
@@ -588,7 +605,7 @@ static void IN_ProcessButtonBinding(cvar_t *bindCvar, qboolean pressed)
     }
     else
     {
-        // It's a key binding
+        // It's a key name — look it up and send a key event
         keyNum_t key = Key_StringToKeynum(binding);
         if (key > 0)
         {
@@ -599,14 +616,19 @@ static void IN_ProcessButtonBinding(cvar_t *bindCvar, qboolean pressed)
 
 /*
 ===============
-IN_ToggleiOSKeyboard
+IN_ToggleConsole
+
+Toggle the Quake console.  The iOS system keyboard is shown/hidden
+automatically by SDL_StartTextInput/StopTextInput in IN_Frame(), so
+we must NOT call Con_ToggleVirtualKeyboard() here — that also activates
+the Q3 on-screen keyboard overlay, producing two keyboards at once.
 ===============
 */
 
-static void IN_ToggleiOSKeyboard(void)
+static void IN_ToggleConsole(void)
 {
-    extern void Con_ToggleVirtualKeyboard(void);
-    Con_ToggleVirtualKeyboard();
+    Com_QueueEvent(0, SE_KEY, K_CONSOLE, qtrue,  0, NULL);
+    Com_QueueEvent(0, SE_KEY, K_CONSOLE, qfalse, 0, NULL);
 }
 
 /*
@@ -623,8 +645,15 @@ static void IN_iOSGameControllerMove(void)
     extern void Con_VirtualKeyboardMove(int dx, int dy);
     extern void Con_VirtualKeyboardSelect(void);
     
-    if (!iOS_IsControllerConnected())
+    if (!iOS_IsControllerConnected()) {
+        // Poll for a newly available controller every ~60 frames (~1 second).
+        static int pollCounter = 0;
+        if (++pollCounter >= 60) {
+            pollCounter = 0;
+            iOS_InitGameController();
+        }
         return;
+    }
     
     float deadzone = joy_deadzone->value;
     float leftStickSens = joy_leftStickSensitivity->value;
@@ -643,14 +672,32 @@ static void IN_iOSGameControllerMove(void)
         Com_QueueEvent(in_eventTime, SE_JOYSTICK_AXIS, j_side_axis->integer, (int)(leftX * 10240), 0, NULL);
         Com_QueueEvent(in_eventTime, SE_JOYSTICK_AXIS, j_forward_axis->integer, (int)(-leftY * 10240), 0, NULL);
         
-        // Right stick for looking
-        Com_QueueEvent(in_eventTime, SE_JOYSTICK_AXIS, j_yaw_axis->integer, (int)(rightX * 10240), 0, NULL);
-        Com_QueueEvent(in_eventTime, SE_JOYSTICK_AXIS, j_pitch_axis->integer, (int)(-rightY * 10240), 0, NULL);
+        // Right stick for looking — apply power curve + smoothing + zoom sensitivity
+        {
+            // Power curve: preserves sign, applies exponent to magnitude.
+            // Exponent 1.0 = linear, 2.0 = quadratic (better precision near center).
+            float curve = (joy_aimCurve && joy_aimCurve->value > 0.5f) ? joy_aimCurve->value : 1.0f;
+            float rxCurved = (rightX >= 0.0f ? 1.0f : -1.0f) * powf(fabsf(rightX), curve);
+            float ryCurved = (rightY >= 0.0f ? 1.0f : -1.0f) * powf(fabsf(rightY), curve);
+
+            // Exponential moving-average smoothing to kill per-frame jitter.
+            // alpha near 1.0 = instant (no smoothing); near 0.0 = heavy lag.
+            static float smoothRX = 0.0f, smoothRY = 0.0f;
+            float alpha = 1.0f - ((joy_aimSmoothing && joy_aimSmoothing->value > 0.0f) ? joy_aimSmoothing->value : 0.0f);
+            if (alpha < 0.05f) alpha = 0.05f;
+            smoothRX = smoothRX * (1.0f - alpha) + rxCurved * alpha;
+            smoothRY = smoothRY * (1.0f - alpha) + ryCurved * alpha;
+
+            // Scale by zoom sensitivity so FOV reduction also slows the stick.
+            float zoomScale = (cl.cgameSensitivity > 0.0f) ? cl.cgameSensitivity : 1.0f;
+            Com_QueueEvent(in_eventTime, SE_JOYSTICK_AXIS, j_yaw_axis->integer, (int)(smoothRX * 10240 * zoomScale), 0, NULL);
+            Com_QueueEvent(in_eventTime, SE_JOYSTICK_AXIS, j_pitch_axis->integer, (int)(-smoothRY * 10240 * zoomScale), 0, NULL);
+        }
     }
     
-    // Check for L3 + R3 combo to toggle console AND virtual keyboard
+    // Check for L3 + R3 combo to toggle console
     if (iOS_GetLeftThumbstickButton() && iOS_GetRightThumbstickButton() && !keyboardComboActive) {
-        IN_ToggleiOSKeyboard();  // This will open console AND virtual keyboard
+        IN_ToggleConsole();
         keyboardComboActive = qtrue;
     } else if (!iOS_GetLeftThumbstickButton() || !iOS_GetRightThumbstickButton()) {
         keyboardComboActive = qfalse;
@@ -660,6 +707,48 @@ static void IN_iOSGameControllerMove(void)
     int keyCatcher = Key_GetCatcher();
     qboolean inGame = !(keyCatcher & (KEYCATCH_UI | KEYCATCH_CONSOLE));
     
+    // ------------------------------------------------------------------
+    // View button: unified handler (short press = toggle console,
+    // long press = voice command). Must run BEFORE the VK block so that
+    // prevOpts stays in sync regardless of which path returns early.
+    // ------------------------------------------------------------------
+    {
+        static int      prevOpts       = 0;
+        static int      optsPressTime  = 0;
+        static qboolean voiceActive    = qfalse;
+        static qboolean longPressFired = qfalse;
+        const  int      LONG_PRESS_MS  = 800;
+
+        int curOpts = iOS_GetButtonOptions();
+
+        if (curOpts && !prevOpts) {
+            optsPressTime  = Sys_Milliseconds();
+            longPressFired = qfalse;
+        } else if (curOpts && prevOpts && !longPressFired) {
+            if (Sys_Milliseconds() - optsPressTime >= LONG_PRESS_MS) {
+                longPressFired = qtrue;
+                voiceActive    = qtrue;
+                iOS_TriggerHaptic(0.6f, 120);
+                extern void iOS_StartVoiceRecognition(void);
+                iOS_StartVoiceRecognition();
+                Com_Printf("^3[Voice] ^7Listening — release View to submit\n");
+            }
+        } else if (!curOpts && prevOpts) {
+            if (voiceActive) {
+                voiceActive = qfalse;
+                extern void iOS_StopVoiceRecognition(void);
+                iOS_StopVoiceRecognition();
+            } else if (!longPressFired) {
+                // Short press — toggle console
+                IN_ToggleConsole();
+            }
+        }
+
+        prevOpts = curOpts;
+        // Keep buttonMappings loop in sync so it is a no-op for this button.
+        ios_controller_state.buttonOptions = curOpts;
+    }
+
     // VIRTUAL KEYBOARD HANDLING HERE - BEFORE THE BUTTON STRUCTS
     if (Con_VirtualKeyboardActive()) {
         // Virtual keyboard navigation
@@ -668,13 +757,13 @@ static void IN_iOSGameControllerMove(void)
         static int prevDpadUp = 0;
         static int prevDpadDown = 0;
         static int prevButtonA = 0;
-        
+
         int currentDpadLeft = iOS_GetDpadLeft();
         int currentDpadRight = iOS_GetDpadRight();
         int currentDpadUp = iOS_GetDpadUp();
         int currentDpadDown = iOS_GetDpadDown();
         int currentButtonA = iOS_GetButtonA();
-        
+
         // D-pad ONLY navigates keyboard, doesn't send console commands
         if (currentDpadLeft && !prevDpadLeft) {
             Con_VirtualKeyboardMove(-1, 0);
@@ -688,31 +777,44 @@ static void IN_iOSGameControllerMove(void)
         if (currentDpadDown && !prevDpadDown) {
             Con_VirtualKeyboardMove(0, 1);
         }
-        
+
         // A button selects
         if (currentButtonA && !prevButtonA) {
             Con_VirtualKeyboardSelect();
         }
-        
+
         // Update previous states
         prevDpadLeft = currentDpadLeft;
         prevDpadRight = currentDpadRight;
         prevDpadUp = currentDpadUp;
         prevDpadDown = currentDpadDown;
         prevButtonA = currentButtonA;
-        
-        // B button is backspace (make sure this is in the virtual keyboard section)
+
+        // B button is backspace
         static int prevButtonB = 0;
         int currentButtonB = iOS_GetButtonB();
         if (currentButtonB && !prevButtonB) {
             extern void Con_VirtualKeyboardBackspace(void);
-            Con_VirtualKeyboardBackspace();  // Make sure this is being called
+            Con_VirtualKeyboardBackspace();
         }
         prevButtonB = currentButtonB;
-        
-        return; // IMPORTANT: Don't process normal D-pad input while keyboard is active
+
+        return; // Don't process normal input while virtual keyboard is active
     }
-    
+
+    // ------------------------------------------------------------------
+    // Poll for voice commands recognised since last frame
+    // ------------------------------------------------------------------
+    {
+        char voiceCmd[512];
+        while (iOS_DequeuePendingVoiceCommand(voiceCmd, sizeof(voiceCmd))) {
+            Com_Printf("^3[Voice] ^7Executing: %s\n", voiceCmd);
+            Cbuf_AddText(voiceCmd);
+            Cbuf_AddText("\n");
+            iOS_TriggerHaptic(0.4f, 80);
+        }
+    }
+
     // Handle buttons with custom bindings
     struct {
         int (*getState)(void);
@@ -728,6 +830,7 @@ static void IN_iOSGameControllerMove(void)
         { iOS_GetRightShoulder, joy_rightShoulder_bind, &ios_controller_state.rightShoulder, K_JOY6 },
         { iOS_GetButtonMenu, joy_buttonMenu_bind, &ios_controller_state.buttonMenu, K_ESCAPE },
         { iOS_GetButtonOptions, joy_buttonOptions_bind, &ios_controller_state.buttonOptions, K_TAB },
+        { iOS_GetButtonShare, joy_buttonShare_bind, &ios_controller_state.buttonShare, K_CONSOLE },
         { iOS_GetLeftThumbstickButton, joy_leftThumbstickButton_bind, &ios_controller_state.leftThumbstickButton, K_SHIFT },
         { iOS_GetRightThumbstickButton, joy_rightThumbstickButton_bind, &ios_controller_state.rightThumbstickButton, K_HOME }
     };
@@ -888,11 +991,6 @@ Trigger haptic feedback on iOS controllers that support it
 void IN_HapticEvent(float intensity, int duration)
 {
 #ifdef USE_IOS_GAMECONTROLLER
-    // Initialize iOS GameController FIRST, before any SDL initialization
-    Com_Printf("Initializing iOS GameController (bypassing SDL)...\n");
-    iOS_InitGameController();
-    Com_Printf("iOS GameController support initialized\n");
-	
 	// Scale intensity by user preference
 	intensity *= joy_hapticStrength->value;
 	
@@ -937,6 +1035,8 @@ static void IN_InitJoystick( void )
     // Sensitivity adjustments
     joy_leftStickSensitivity = Cvar_Get("joy_leftStickSensitivity", "1.0", CVAR_ARCHIVE);
     joy_rightStickSensitivity = Cvar_Get("joy_rightStickSensitivity", "5.0", CVAR_ARCHIVE);
+    joy_aimCurve = Cvar_Get("joy_aimCurve", "2.0", CVAR_ARCHIVE);
+    joy_aimSmoothing = Cvar_Get("joy_aimSmoothing", "0.15", CVAR_ARCHIVE);
 
     // Button bindings with direct commands
     joy_buttonA_bind = Cvar_Get("joy_buttonA_bind", "+moveup", CVAR_ARCHIVE);  // Jump
@@ -952,7 +1052,8 @@ static void IN_InitJoystick( void )
     joy_dpadLeft_bind = Cvar_Get("joy_dpadLeft_bind", "weapprev", CVAR_ARCHIVE);  // Previous weapon
     joy_dpadRight_bind = Cvar_Get("joy_dpadRight_bind", "weapnext", CVAR_ARCHIVE);  // Next weapon
     joy_buttonMenu_bind = Cvar_Get("joy_buttonMenu_bind", "togglemenu", CVAR_ARCHIVE);  // Menu toggle
-    joy_buttonOptions_bind = Cvar_Get("joy_buttonOptions_bind", "+scores", CVAR_ARCHIVE);  // Show scores
+    joy_buttonOptions_bind = Cvar_Get("joy_buttonOptions_bind", "CONSOLE", CVAR_ARCHIVE);  // Console
+    joy_buttonShare_bind = Cvar_Get("joy_buttonShare_bind", "+scores", CVAR_ARCHIVE);  // Show scores
     joy_leftThumbstickButton_bind = Cvar_Get("joy_leftThumbstickButton_bind", "+speed", CVAR_ARCHIVE);  // Hold for walk
     joy_rightThumbstickButton_bind = Cvar_Get("joy_rightThumbstickButton_bind", "centerview", CVAR_ARCHIVE);  // Center view
 	
@@ -1671,8 +1772,20 @@ static void IN_ProcessEvents( void )
 		switch( e.type )
 		{
             case SDL_KEYDOWN:
-                if ( e.key.repeat && Key_GetCatcher( ) == 0 )
-                    break;
+                if ( e.key.repeat ) {
+                    if ( Key_GetCatcher( ) == 0 ) {
+                        break; // not in any UI: ignore all auto-repeat
+                    }
+                    // Console is open: throttle repeat to ~20 Hz so that
+                    // holding backspace/arrows feels natural but the game's
+                    // uncapped loop doesn't flood the console with keystrokes.
+                    {
+                        static int lastRepeatMs = 0;
+                        int nowMs = Sys_Milliseconds();
+                        if ( nowMs - lastRepeatMs < 50 ) break;
+                        lastRepeatMs = nowMs;
+                    }
+                }
 
                 if( ( key = IN_TranslateSDLToQ3Key( &e.key.keysym, qtrue ) ) )
                 {
@@ -1912,10 +2025,7 @@ void IN_Frame( void )
     if (isConsoleActive && !wasConsoleActive) {
         SDL_StartTextInput();
     } else if (!isConsoleActive && wasConsoleActive) {
-        // Don't disable text input on iOS - we might need it
-        #ifndef IOS
         SDL_StopTextInput();
-        #endif
     }
     wasConsoleActive = isConsoleActive;
     

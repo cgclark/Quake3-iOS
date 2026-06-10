@@ -47,11 +47,27 @@ int iOS_GetDpadLeft(void);
 int iOS_GetDpadRight(void);
 int iOS_GetButtonMenu(void);
 int iOS_GetButtonOptions(void);
+int iOS_GetButtonShare(void);
 int iOS_GetLeftThumbstickButton(void);
 int iOS_GetRightThumbstickButton(void);
 
 // Haptic feedback
 void iOS_TriggerHaptic(float intensity, int durationMs);
+
+// Voice command — called from Swift speech recognizer, polled by game loop
+void iOS_EnqueueVoiceCommand(const char *command);
+// Returns 1 and fills buf if a command is waiting; returns 0 if queue is empty.
+int  iOS_DequeuePendingVoiceCommand(char *buf, int bufSize);
+
+// Start / stop microphone recording (called from game input loop)
+void iOS_StartVoiceRecognition(void);
+void iOS_StopVoiceRecognition(void);
+// Register Swift callbacks so the C layer can invoke them
+void iOS_RegisterVoiceFunctions(void (*startFn)(void), void (*stopFn)(void));
+
+// Process any pending main-queue work (speech recognition callbacks etc.)
+// Must be called from the main thread once per frame.
+void iOS_PumpMainRunLoop(void);
 
 #ifdef __cplusplus
 }

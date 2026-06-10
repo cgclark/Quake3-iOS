@@ -21,6 +21,8 @@
 @property (nonatomic, strong) id disconnectObserver;
 @property (nonatomic, strong) CHHapticEngine *hapticEngine API_AVAILABLE(ios(13.0));
 @property (nonatomic, strong) id<CHHapticPatternPlayer> hapticPlayer API_AVAILABLE(ios(13.0));
+@property (nonatomic, strong) NSMutableArray<NSString *> *voiceCommandQueue;
+@property (nonatomic, strong) dispatch_queue_t voiceQueue;
 @end
 
 @implementation IOSGameController
@@ -37,9 +39,22 @@
 - (instancetype)init {
     self = [super init];
     if (self) {
+        _voiceCommandQueue = [NSMutableArray array];
+        _voiceQueue = dispatch_queue_create("com.quake3.voicecommand", DISPATCH_QUEUE_SERIAL);
         [self setupControllerObservers];
         [self findController];
         [self startControllerDiscovery];
+
+        // GCController.controllers is sometimes empty right at launch even for
+        // already-paired controllers. Retry after a short delay to catch them.
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.5 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self findController];
+        });
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(2.0 * NSEC_PER_SEC)),
+                       dispatch_get_main_queue(), ^{
+            [self findController];
+        });
     }
     return self;
 }
@@ -54,6 +69,11 @@
 
 - (void)setSDLWindow:(SDL_Window *)window {
     _sdlWindow = window;
+    // If a controller was already detected before the window was created,
+    // hide the on-screen controls now that we have a valid window.
+    if (_sdlWindow && self.activeController) {
+        Sys_HideControls(_sdlWindow);
+    }
 }
 
 - (void)setupControllerObservers {
@@ -114,8 +134,17 @@
         for (GCController *controller in controllers) {
             if (controller.extendedGamepad) {
                 self.activeController = controller;
-                NSLog(@"iOS GameController: Connected to %@", 
+                NSLog(@"iOS GameController: Connected to %@",
                       controller.vendorName ?: @"Unknown Controller");
+
+                // Override Share button system screenshot behavior
+                GCControllerButtonInput *shareBtn = [controller.extendedGamepad valueForKey:@"buttonShare"];
+                if (shareBtn) {
+                    shareBtn.pressedChangedHandler = ^(GCControllerButtonInput *button, float value, BOOL pressed) {
+                        // Handler set — suppresses iOS default screenshot action
+                    };
+                }
+
                 [self setupHaptics];
                 
                 // Hide on-screen controls when controller is found
@@ -301,6 +330,13 @@
     return NO;
 }
 
+- (BOOL)buttonShare {
+    if (!self.activeController || !self.activeController.extendedGamepad) return NO;
+    GCControllerButtonInput *btn = [self.activeController.extendedGamepad valueForKey:@"buttonShare"];
+    if (!btn) return NO;
+    return btn.pressed;
+}
+
 - (BOOL)leftThumbstickButton {
     if (@available(iOS 12.1, tvOS 12.1, *)) {
         if (!self.activeController || !self.activeController.extendedGamepad) return NO;
@@ -315,6 +351,24 @@
         return self.activeController.extendedGamepad.rightThumbstickButton.pressed;
     }
     return NO;
+}
+
+// Thread-safe voice command queue
+- (void)enqueuePendingVoiceCommand:(NSString *)command {
+    dispatch_sync(self.voiceQueue, ^{
+        [self.voiceCommandQueue addObject:command];
+    });
+}
+
+- (NSString * _Nullable)dequeuePendingVoiceCommand {
+    __block NSString *cmd = nil;
+    dispatch_sync(self.voiceQueue, ^{
+        if (self.voiceCommandQueue.count > 0) {
+            cmd = self.voiceCommandQueue.firstObject;
+            [self.voiceCommandQueue removeObjectAtIndex:0];
+        }
+    });
+    return cmd;
 }
 
 @end

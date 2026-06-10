@@ -21,6 +21,8 @@ Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
 */
 
 #include <signal.h>
+#include <unistd.h>
+#include <pthread.h>
 #include <stdlib.h>
 #include <limits.h>
 #include <sys/types.h>
@@ -281,6 +283,40 @@ Sys_Exit
 Single exit point (regular exit or in case of error)
 =================
 */
+jmp_buf iOS_exitJmpBuf;
+int     iOS_exitCallbackEnabled = 0;
+
+#ifdef IOS
+// CADisplayLink-mode state -------------------------------------------------
+// When ios_displayLinkMode is set, Sys_Startup returns after init instead of
+// entering the blocking while(1) loop.  Swift then calls Sys_TickFrame() once
+// per display refresh via CADisplayLink, keeping the main run loop free so
+// that GCD-main callbacks (e.g. SFSpeechRecognizer) can fire between frames.
+static int     ios_displayLinkMode = 0;
+static jmp_buf ios_tickAbort;           // setjmp set at the top of each Sys_TickFrame
+static int     ios_tickAbortArmed = 0;  // 1 while executing inside Com_Frame
+int            iOS_exitRequested  = 0;  // checked by Swift CADisplayLink handler
+
+void Sys_UseDisplayLink( void )
+{
+	ios_displayLinkMode = 1;
+}
+
+// Called once per display refresh by the Swift CADisplayLink.
+// Returns 0 to keep running, 1 when the game has requested exit.
+int Sys_TickFrame( void )
+{
+	if( iOS_exitRequested ) return 1;
+	ios_tickAbortArmed = 1;
+	if( setjmp( ios_tickAbort ) == 0 )
+	{
+		Com_Frame( );
+	}
+	ios_tickAbortArmed = 0;
+	return iOS_exitRequested;
+}
+#endif // IOS
+
 static __attribute__ ((noreturn)) void Sys_Exit( int exitCode )
 {
 	CON_Shutdown( );
@@ -298,6 +334,23 @@ static __attribute__ ((noreturn)) void Sys_Exit( int exitCode )
 	NET_Shutdown( );
 
 	Sys_PlatformExit( );
+
+#ifdef IOS
+	iOS_exitRequested = 1;
+	// If we are inside a CADisplayLink frame, unwind Com_Frame cleanly.
+	if( ios_tickAbortArmed )
+	{
+		ios_tickAbortArmed = 0;
+		iOS_exitCallbackEnabled = 0;
+		longjmp( ios_tickAbort, 1 );
+	}
+	// Fallback: old blocking-loop exit via Sys_StartupWithExitCallback's setjmp.
+	if( iOS_exitCallbackEnabled )
+	{
+		iOS_exitCallbackEnabled = 0;
+		longjmp( iOS_exitJmpBuf, 1 );
+	}
+#endif
 
 	exit( exitCode );
 }
@@ -805,11 +858,23 @@ int main( int argc, char **argv )
 	Com_Init( commandLine );
 	NET_Init( );
 
+#ifdef IOS
+	// Force cheats on — must happen after Com_Init so the cvar system exists,
+	// but before any map loads so the game module picks up the value.
+	Cvar_Set( "sv_cheats", "1" );
+	Cvar_SetValue( "sv_cheats", 1 );
+#endif
+
 	signal( SIGILL, Sys_SigHandler );
 	signal( SIGFPE, Sys_SigHandler );
 	signal( SIGSEGV, Sys_SigHandler );
 	signal( SIGTERM, Sys_SigHandler );
 	signal( SIGINT, Sys_SigHandler );
+
+#ifdef IOS
+	// CADisplayLink mode: return now so Swift can drive frames via Sys_TickFrame().
+	if( ios_displayLinkMode ) return;
+#endif
 
 	while( 1 )
 	{
@@ -820,4 +885,18 @@ int main( int argc, char **argv )
 	return 0;
 #endif
 }
+
+#ifdef IOS
+void Sys_StartupWithExitCallback( int argc, char **argv )
+{
+	iOS_exitCallbackEnabled = 0;
+	if( setjmp( iOS_exitJmpBuf ) != 0 )
+	{
+		// returned here via longjmp — game has exited
+		return;
+	}
+	iOS_exitCallbackEnabled = 1;
+	Sys_Startup( argc, argv );
+}
+#endif
 

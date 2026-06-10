@@ -18,8 +18,20 @@
 #include "SDL_uikitappdelegate.h"
 #pragma clang diagnostic pop
 #include "UIImage-Targa.h"
+#import "IOSGameController.h"
 
 void Sys_Startup( int argc, char **argv );
+
+// Wraps setjmp + Sys_Startup; returns normally after game exits
+void Sys_StartupWithExitCallback( int argc, char **argv );
+
+// CADisplayLink mode: call before Sys_StartupWithExitCallback so that
+// Sys_Startup returns after init instead of entering the blocking loop.
+void Sys_UseDisplayLink( void );
+
+// Call once per display refresh (from CADisplayLink).
+// Returns 0 to keep running, 1 when the game has requested exit.
+int  Sys_TickFrame( void );
 
 void Com_Frame(void);
 
@@ -47,5 +59,9 @@ kbutton_t    in_strafe;
 void Sys_SetHomeDir( const char *newHomeDir );
 
 int Key_GetCatcher( void );
+
+// Voice command bridge
+void iOS_RegisterVoiceFunctions(void (*startFn)(void), void (*stopFn)(void));
+void iOS_EnqueueVoiceCommand(const char *command);
 
 #endif /* bridging_h */

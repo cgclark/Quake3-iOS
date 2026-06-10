@@ -31,6 +31,34 @@ Background: I could not get @tomkidd's port to work with any of my controllers: 
 
 ---
 
+## Version 0.9 Changes (cgclark fork)
+
+### Controller & Input
+- **Smoother aiming** — right stick uses a power curve (`joy_aimCurve`, default 2.0) and exponential smoothing (`joy_aimSmoothing`, default 0.15) for precise near-center control with full speed at max deflection
+- **Zoom sensitivity** — right stick automatically scales sensitivity when zoomed in via `cl.cgameSensitivity`
+- **Default look sensitivity** — changed from 15 to 10
+- **View button** — short press toggles the console; long press (800 ms, haptic feedback) starts voice recording
+
+### Console & Keyboard
+- **iOS native keyboard only** — the Q3 custom on-screen keyboard overlay is disabled; only the iOS system keyboard appears in the console
+- **Keyboard dismiss** — iOS keyboard correctly dismisses when the console closes
+- **Key repeat throttle** — console key repeat capped at ~20 Hz to prevent flooding from the uncapped game loop
+
+### Voice Commands
+- **Speak to console** — hold the View button to record a voice command, release to submit. Powered by `SFSpeechRecognizer`. Example: say *"set g_gravity 100"* to halve gravity
+- Requires microphone and speech recognition permissions (prompted on first use)
+
+### Game Loop
+- **Non-blocking architecture** — game loop replaced with `DispatchQueue.main.async` chaining instead of a blocking `while(1)` call. This frees the GCD main queue between frames so system callbacks (speech recognition, etc.) can execute, and keeps the call stack shallow enough to avoid a stack overflow in `SV_SendDownloadMessages`
+
+### Cheats
+- **Always enabled** — `sv_cheats 1` is set by default so console commands like `god`, `noclip`, `give all`, and cvar changes work without needing `devmap`
+
+### App Icon
+- Fixed missing app icon — all icon PNGs flattened from RGBA to RGB (iOS rejects icons with an alpha channel)
+
+---
+
 Original README:
 
 This is my port of Quake III: Arena for iOS, running in modern resolutions including the full width of the iPhone X. I have also made a target and version for tvOS to run on Apple TV.
